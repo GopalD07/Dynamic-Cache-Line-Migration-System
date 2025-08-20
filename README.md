@@ -1,156 +1,171 @@
-# Dynamic Cache Line Migration System
-
-A Verilog implementation of a multi-level cache hierarchy with intelligent dynamic cache line migration and LRU (Least Recently Used) replacement policy.
-
-## 🎯 Overview
-
-This project implements a sophisticated 3-level cache system (L1, L2, L3) with automatic data migration capabilities. When data is accessed from a lower-priority cache level, it's automatically migrated to a higher-priority level for faster future access, optimizing cache performance through intelligent data placement.
-
-## 🏗️ Architecture
-
-### Cache Hierarchy
-- **L1 Cache**: Highest priority, fastest access
-- **L2 Cache**: Medium priority, intermediate access speed  
-- **L3 Cache**: Lowest priority, slowest access but largest capacity
-
-### Key Features
-- **Dynamic Migration**: Automatic data movement from L3→L2→L1 based on access patterns
-- **LRU Replacement**: Intelligent eviction of least recently used cache lines
-- **Hit Detection**: Comprehensive hit/miss detection across all cache levels
-- **Configurable Parameters**: Customizable cache size, line size, and address width
-
-## 📁 Project Structure
-
-```
-.
-├── cache_controller.v    # Main cache controller and memory modules
-├── tb_cache_controller.v # Comprehensive testbench
-└── README.md            # This file
-```
-
-## 🔧 Module Details
-
-### `cache_memory`
-Core cache memory module with LRU tracking:
-- Configurable cache size (default: 256 lines)
-- 32-bit data lines
-- 8-bit address width
-- Built-in LRU counter mechanism
-- Automatic hit/miss detection
-
-### `cache_controller`
-Top-level controller managing the 3-level cache hierarchy:
-- Instantiates L1, L2, and L3 cache memories
-- Implements dynamic migration logic
-- Handles cache coherency across levels
-- Provides unified interface for cache operations
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Verilog simulator (ModelSim, VCS, Icarus Verilog, etc.)
-- Basic understanding of cache architectures and Verilog HDL
-
-### Running the Simulation
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/dynamic-cache-migration.git
-   cd dynamic-cache-migration
-   ```
-
-2. **Compile and run with your preferred simulator:**
-   
-   **Using Icarus Verilog:**
-   ```bash
-   iverilog -o cache_sim cache_controller.v tb_cache_controller.v
-   ./cache_sim
-   ```
-   
-   **Using ModelSim:**
-   ```bash
-   vlog cache_controller.v tb_cache_controller.v
-   vsim -c tb_cache_controller -do "run -all; quit"
-   ```
-
-### Expected Output
-The testbench demonstrates:
-- Initial cache state after reset
-- Write operations to L3 cache
-- Read operations triggering automatic migration
-- LRU replacement policy in action
-- Hit/miss status across different cache levels
-
-Sample output:
-```
-Initial State:
-Reset = 1, Addr = 00, Wr_en = 0, Rd_en = 0, Data_in = 00000000, Data_out = xxxxxxxx, Hit = x
---------------------------------------------------
-Write Operation:
-Addr = aa, Wr_en = 1, Rd_en = 0, Data_in = 0000dead, Data_out = xxxxxxxx, Hit = x
-Note: Data written to L3 cache.
---------------------------------------------------
-First Read Operation:
-Addr = aa, Wr_en = 0, Rd_en = 1, Data_in = 0000dead, Data_out = 0000dead, Hit = 1
-Note: Data read from L3 cache. Migration to L2 triggered.
---------------------------------------------------
-```
-
-## ⚙️ Configuration
-
-The cache system is highly configurable through module parameters:
-
-```verilog
-cache_controller #(
-    .CACHE_SIZE(256),    // Number of cache lines
-    .LINE_SIZE(32),      // Data width in bits
-    .ADDR_WIDTH(8)       // Address width in bits
-) cache_inst (
-    // ... port connections
+module cache_memory #(parameter CACHE_SIZE = 256, LINE_SIZE = 32, ADDR_WIDTH = 8) (
+    input wire clk,
+    input wire rst,
+    input wire [ADDR_WIDTH-1:0] addr,
+    input wire wr_en,
+    input wire rd_en,
+    input wire [LINE_SIZE-1:0] data_in,
+    output reg [LINE_SIZE-1:0] data_out,
+    output reg hit
 );
-```
+    reg [LINE_SIZE-1:0] cache [0:CACHE_SIZE-1];
+    reg [ADDR_WIDTH-1:0] tag [0:CACHE_SIZE-1];
+    reg valid [0:CACHE_SIZE-1];
+    reg [31:0] lru_counter [0:CACHE_SIZE-1]; // LRU counters
 
-## 🧪 Testing
+    integer i;
+    function integer find_lru_line(input integer dummy);
+        integer i, lru_index;
+        begin
+            lru_index = 0;
+            for (i = 1; i < CACHE_SIZE; i = i + 1) begin
+                if (lru_counter[i] > lru_counter[lru_index]) begin
+                    lru_index = i;
+                end
+            end
+            find_lru_line = lru_index;
+        end
+    endfunction
 
-The included testbench (`tb_cache_controller.v`) provides comprehensive testing scenarios:
 
-1. **Basic Write/Read Operations**: Verifies fundamental cache functionality
-2. **Migration Testing**: Confirms automatic data migration between cache levels
-3. **LRU Verification**: Tests the least recently used replacement policy
-4. **Hit/Miss Detection**: Validates cache hit/miss logic across all levels
 
-## 📊 Performance Features
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            for (i = 0; i < CACHE_SIZE; i = i + 1) begin
+                valid[i] <= 0;
+                tag[i] <= 0;
+                cache[i] <= 0;
+                lru_counter[i] <= 0; // Reset LRU counters
+            end
+            hit <= 0;
+            data_out <= 0;
+        end else begin
+            // Update LRU counters
+            for (i = 0; i < CACHE_SIZE; i = i + 1) begin
+                if (valid[i] && (tag[i] == addr) && (wr_en || rd_en)) begin
+                    lru_counter[i] <= 0; // Reset counter for accessed line
+                end else if (valid[i]) begin
+                    lru_counter[i] <= lru_counter[i] + 1; // Increment counter for others
+                end
+            end
 
-- **Automatic Data Migration**: Frequently accessed data automatically moves to faster cache levels
-- **LRU Replacement**: Optimal cache line replacement based on usage patterns
-- **Multi-Level Hit Detection**: Comprehensive search across L1, L2, and L3 caches
-- **Zero-Wait State Access**: Immediate data availability on cache hits
+            if (wr_en) begin
+                cache[addr] <= data_in;
+                tag[addr] <= addr;
+                valid[addr] <= 1;
+                lru_counter[addr] <= 0; // Reset LRU counter for written line
+            end
+            if (rd_en) begin
+                if (valid[addr] && tag[addr] == addr) begin
+                    data_out <= cache[addr];
+                    hit <= 1;
+                end else begin
+                    hit <= 0;
+                end
+            end
+        end
+    end
+endmodule
 
-## 🔄 Migration Logic
+module cache_controller #(parameter CACHE_SIZE = 256, LINE_SIZE = 32, ADDR_WIDTH = 8) (
+    input wire clk,
+    input wire rst,
+    input wire [ADDR_WIDTH-1:0] addr,
+    input wire wr_en,
+    input wire rd_en,
+    input wire [LINE_SIZE-1:0] data_in,
+    output wire [LINE_SIZE-1:0] data_out,
+    output wire hit
+);
+    // Cache instances for L1, L2, and L3
+    wire [LINE_SIZE-1:0] l1_data_out, l2_data_out, l3_data_out;
+    wire l1_hit, l2_hit, l3_hit;
 
-The system implements intelligent migration patterns:
+    cache_memory #(CACHE_SIZE, LINE_SIZE, ADDR_WIDTH) l1_cache (
+        .clk(clk),
+        .rst(rst),
+        .addr(addr),
+        .wr_en(wr_en),
+        .rd_en(rd_en),
+        .data_in(data_in),
+        .data_out(l1_data_out),
+        .hit(l1_hit)
+    );
 
-1. **L3 → L2 Migration**: When data is accessed from L3, it's copied to L2
-2. **L2 → L1 Migration**: When data is accessed from L2, it's copied to L1
-3. **LRU Eviction**: When target cache is full, LRU line is replaced
+    cache_memory #(CACHE_SIZE, LINE_SIZE, ADDR_WIDTH) l2_cache (
+        .clk(clk),
+        .rst(rst),
+        .addr(addr),
+        .wr_en(wr_en),
+        .rd_en(rd_en),
+        .data_in(data_in),
+        .data_out(l2_data_out),
+        .hit(l2_hit)
+    );
 
-## 🐛 Known Issues & Limitations
+    cache_memory #(CACHE_SIZE, LINE_SIZE, ADDR_WIDTH) l3_cache (
+        .clk(clk),
+        .rst(rst),
+        .addr(addr),
+        .wr_en(wr_en),
+        .rd_en(rd_en),
+        .data_in(data_in),
+        .data_out(l3_data_out),
+        .hit(l3_hit)
+    );
 
-- Migration occurs on the next clock cycle after access
-- All cache levels currently have the same size (configurable)
-- Write operations always target the addressed cache line directly
+    // Hit detection and data output
+    assign hit = l1_hit | l2_hit | l3_hit;
+    assign data_out = l1_hit ? l1_data_out : (l2_hit ? l2_data_out : l3_data_out);
 
-## 🤝 Contributing
+    // Dynamic Cache Line Migration Logic with LRU
+    reg [ADDR_WIDTH-1:0] migration_addr;
+    reg migration_en;
+    integer lru_line; // Declare lru_line outside the always block
 
-Contributions are welcome! Please feel free to submit pull requests or open issues for:
-- Performance optimizations
-- Additional replacement policies (FIFO, Random, etc.)
-- Write-back vs write-through policies
-- Cache coherency protocols
+    always @(posedge clk) begin
+        if (rst) begin
+            migration_en <= 0;
+            migration_addr <= 0;
+        end else begin
+            // Monitor access patterns and trigger migration
+            if (l2_hit && !l1_hit) begin
+                // Migrate from L2 to L1
+                migration_en <= 1;
+                migration_addr <= addr;
+            end else if (l3_hit && !l2_hit) begin
+                // Migrate from L3 to L2
+                migration_en <= 1;
+                migration_addr <= addr;
+            end else begin
+                migration_en <= 0;
+            end
+        end
+    end
 
-## 📄 License
-
-This project is open source. Feel free to use, modify, and distribute according to your needs.
+    // Perform migration using LRU
+    always @(posedge clk) begin
+        if (migration_en) begin
+            if (l2_hit && !l1_hit) begin
+                // Find LRU line in L1
+                lru_line = l1_cache.find_lru_line(0); // Pass a dummy input
+                // Migrate from L2 to L1
+                l1_cache.cache[lru_line] <= l2_cache.cache[migration_addr];
+                l1_cache.tag[lru_line] <= l2_cache.tag[migration_addr];
+                l1_cache.valid[lru_line] <= 1;
+                l1_cache.lru_counter[lru_line] <= 0; // Reset LRU counter
+            end else if (l3_hit && !l2_hit) begin
+                // Find LRU line in L2
+                lru_line = l2_cache.find_lru_line(0); // Pass a dummy input
+                // Migrate from L3 to L2
+                l2_cache.cache[lru_line] <= l3_cache.cache[migration_addr];
+                l2_cache.tag[lru_line] <= l3_cache.tag[migration_addr];
+                l2_cache.valid[lru_line] <= 1;
+                l2_cache.lru_counter[lru_line] <= 0; // Reset LRU counter
+            end
+        end
+    end
+endmodule
 
 
 
