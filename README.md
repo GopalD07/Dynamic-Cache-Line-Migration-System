@@ -152,10 +152,5 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 This project is open source. Feel free to use, modify, and distribute according to your needs.
 
-## 📞 Contact
 
-For questions or suggestions regarding this implementation, please open an issue on GitHub.
 
----
-
-**Note**: This is an educational/research implementation of cache architecture concepts. For production use, additional considerations for timing, power consumption, and manufacturing constraints would be necessary.
