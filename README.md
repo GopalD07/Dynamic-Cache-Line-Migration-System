@@ -1,7 +1,10 @@
-Dynamic Cache Line Migration System
+Dynamic Cache Line Migration System:
+
 A Verilog implementation of a multi-level cache hierarchy with intelligent dynamic cache line migration and LRU (Least Recently Used) replacement policy.
+
 🎯 Overview
 This project implements a 3-level cache system (L1, L2, L3) with dynamic data migration to optimize performance. When data is accessed from a lower-level cache (e.g., L3), it is automatically migrated to a higher-level cache (e.g., L2 or L1) for faster future access. The system uses an LRU replacement policy to manage cache evictions efficiently.
+
 🏗 Architecture
 Cache Hierarchy
 
